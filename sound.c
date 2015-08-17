@@ -21,7 +21,6 @@
  *
  */
 
-
 #include <stdio.h>
 #include <ctype.h>
 #include "sound.h"
@@ -173,11 +172,15 @@ static int elem_get_vol_percent(snd_mixer_elem_t *elem)
 
 		}
 		/* capture volume */
-		if (snd_mixer_selem_has_capture_channel(elem, i) && 
+		else if (snd_mixer_selem_has_capture_channel(elem, i) && 
 				!snd_mixer_selem_has_common_volume(elem)) {
 			snd_mixer_selem_get_capture_volume_range(elem, &pmin, &pmax);
 			if (snd_mixer_selem_has_capture_volume(elem))
 				snd_mixer_selem_get_capture_volume(elem, i, &volume);
+		} else {
+		/* Misc. ex: Boost */
+			snd_mixer_selem_get_playback_volume_range(elem, &pmin, &pmax);
+			snd_mixer_selem_get_playback_volume(elem, i, &volume);
 		}
 	}
 
@@ -186,8 +189,42 @@ static int elem_get_vol_percent(snd_mixer_elem_t *elem)
 	return percent;
 }
 
+static int elem_get_status(snd_mixer_elem_t *elem)
+{
+	int i, psw = -1;
+
+	for (i = 0; i <= SND_MIXER_SCHN_LAST; i++) {
+		if (snd_mixer_selem_has_playback_channel(elem, i) && 
+				snd_mixer_selem_has_playback_switch(elem))
+			snd_mixer_selem_get_playback_switch(elem, i, &psw);
+		else if (snd_mixer_selem_has_capture_channel(elem, i) && 
+				snd_mixer_selem_has_capture_switch(elem))
+			snd_mixer_selem_get_capture_switch(elem, i, &psw);
+	}
+
+	return psw;
+}
+
+MUTEST sound_mixer_mute_status(char *mixer_name)
+{
+	int status;
+
+	snd_mixer_t *handle = NULL;
+	snd_mixer_elem_t *elem = NULL;
+
+	elem = sound_get_elem(mixer_name, &handle);
+	if (!elem) {
+		sdbg("could not found elem\n");
+		return -1;
+	}
+	status = elem_get_status(elem);
+	snd_mixer_close(handle);
+
+	return status;
+}
+
 /* mute: 0 -> mute,  1 -> unmute */
-static void sound_mixer_mute(const char *mixer, int mute)
+void sound_mixer_mute(const char *mixer, MUTEST mute)
 {
 	int i;
 	snd_mixer_t *handle = NULL;
@@ -198,8 +235,12 @@ static void sound_mixer_mute(const char *mixer, int mute)
 		return;
 
 	for (i = 0; i <= SND_MIXER_SCHN_LAST; i++) {
-		if (snd_mixer_selem_has_playback_switch(elem))
+		if (snd_mixer_selem_has_playback_channel(elem, i) &&
+				snd_mixer_selem_has_playback_switch(elem))
 			snd_mixer_selem_set_playback_switch(elem, i, mute);
+		else if (snd_mixer_selem_has_capture_channel(elem, i) &&
+				snd_mixer_selem_has_capture_switch(elem))
+			snd_mixer_selem_set_capture_switch(elem, i, mute);
 	}
 	snd_mixer_close(handle);
 }
@@ -245,82 +286,33 @@ int sound_mixer_set_volume(char *mixer_name, int vol)
 	return 0;
 }
 
-int sound_mic_get_volume()
-{
-	return sound_mixer_get_volume("Capture");
-}
-
-void sound_mic_set_volume(int vol_percent)
-{
-	sound_mixer_set_volume("Mic Boost", vol_percent);
-	sound_mixer_set_volume("Capture", vol_percent);
-	sound_mixer_set_volume("Mic", vol_percent);
-}
-
-int sound_master_get_volume()
-{
-	return sound_mixer_get_volume("Master");
-}
-
-void sound_master_set_volume(int vol_percent)
-{
-	sound_mixer_set_volume("Master", 100);
-	sound_mixer_set_volume("Headphone", vol_percent);
-}
-
-void sound_master_mute()
-{
-	sound_mixer_mute("Master", 0);
-	sound_mixer_mute("Headphone", 0);
-}
-
-void sound_master_unmute()
-{
-	sound_mixer_mute("Master", 1);
-	sound_mixer_mute("Headphone", 1);
-}
-
-void sound_mic_mute()
-{
-	sound_mixer_mute("Mic", 0);
-	sound_mixer_mute("Capture", 0);
-}
-
-void sound_mic_unmute()
-{
-	sound_mixer_mute("Mic", 1);
-	sound_mixer_mute("Capture", 1);
-}
 
 #ifdef SOUND_TEST
 
-
 int main(int argc, char **argv)
 {
-	if (isdigit(argv[1][0])) {
 
-		printf("previous master vol %d%%\n", sound_master_get_volume());
-		printf("change msater vol %d%%\n", atoi(argv[1]));
-		sound_master_set_volume(atoi(argv[1]));
-		printf("current master vol %d%%\n", sound_master_get_volume());
+	int st;
+	
+	if (argc < 2)
+		return -1;
 
-		printf("=======================\n");
-
-		printf("previous mic vol %d%%\n", sound_mic_get_volume());
-		printf("change vol %d%%\n", atoi(argv[1]));
-		sound_mic_set_volume(atoi(argv[1]));
-		printf("current mic vol %d%%\n", sound_mic_get_volume());
-
-		printf("=======================\n");
-
-	} else if (argv[1][0] == 'm') {
-		printf("mute\n");
-		sound_master_mute();
-		sound_mic_mute();
-	} else if (argv[1][0] == 'u') {
-		printf("unmute\n");
-		sound_master_unmute();
-		sound_mic_unmute();
+	if (!strcmp("get", argv[1])) {
+		printf("get %s vol %d\n", argv[2], sound_mixer_get_volume(argv[2]));
+	} else if (!strcmp("set", argv[1])) {
+		printf("previous %s vol %d\n", argv[2], sound_mixer_get_volume(argv[2]));
+		sound_mixer_set_volume(argv[2], atoi(argv[3]));
+		printf("current %s vol %d\n", argv[2], sound_mixer_get_volume(argv[2]));
+	} else if (!strcmp("mute", argv[1])) {
+		sound_mixer_mute(argv[2], MUTE);
+		printf("mute %s\n", argv[2]);
+	} else if (!strcmp("unmute", argv[1])) {
+		sound_mixer_mute(argv[2], UNMUTE);
+		printf("unmute %s\n", argv[2]);
+	} else if (!strcmp("mutest", argv[1])) {
+		st = sound_mixer_mute_status(argv[2]);
+		printf("%s is %s\n", argv[1],
+				st == MUTE ? "mute" : "unmute");
 	}
 
 	return 0;

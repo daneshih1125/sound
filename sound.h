@@ -1,9 +1,9 @@
-#ifndef _SOUNDCTL_H_
-#define _SOUNDCTL_H_
+#ifndef _SOUND_H_
+#define _SOUNE_H_
 
 #include <alsa/asoundlib.h>
 #include <math.h>
-#ifdef SOUNDCTL_DEBUG
+#ifdef SOUND_DEBUG
 
 #define sdbg(format, arg... ) fprintf(stderr, format, ##arg )
 #else
@@ -15,16 +15,22 @@
 
 #endif
 
-int soundctl_mic_get_volume();
-void soundctl_mic_set_volume(int vol_percent);
+typedef enum mute_st{
+	MUTE = 0,
+	UNMUTE = 1,
+} MUTEST;
 
-int soundctl_master_get_volume();
-void soundctl_master_set_volume(int vol_percent);
 
-void soundctl_mic_mute();
-void soundctl_mic_unmute();
+/*
+ * mixer name 
+ * playback devices: Master, Mic, Headphone, Mic Boost
+ * Capture devices: Capture
+ */
 
-void soundctl_master_mute();
-void soundctl_master_unmute();
+int sound_mixer_get_volume(const char *mixer_name);
+int sound_mixer_set_volume(char *mixer_name, int vol);
 
-#endif /* _SOUNDCTL_H_ */
+MUTEST sound_mixer_mute_status(char *mixer_name);
+void sound_mixer_mute(const char *mixer, MUTEST mute);
+
+#endif /* _SOUND_H_ */
